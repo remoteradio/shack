@@ -1,14 +1,13 @@
 defmodule Shack.Application do
 
   use Application
+  alias Shack.DeviceProtocol
 
   @http_port 8088
   @echo_prefix :echo
   @shack_prefix :shack
-  @http_path "localhost:#{@http_port}/#{@echo_prefix}/#{@shack_prefix}/"
 
   def start(_type, _args) do
-
     # setup config and start ssdp library
     :ets.new :config, [:set, :public, :named_table]
 		:ets.insert :config, usn: "2f20202faf02"
@@ -21,17 +20,14 @@ defmodule Shack.Application do
       {"/#{@echo_prefix}/[...]", :jrtp_bridge, []},
       {"/[...]", :cowboy_static, {:priv_dir, :shack, "web", [{:mimetypes, :cow_mimetypes, :all}]}},
     ]} ])
-    {:ok, _pid} = :cowboy.start_http(:http, 10, [port: @http_port], 
+    {:ok, _pid} = :cowboy.start_http(:http, 10, [port: @http_port],
       [env: [dispatch: dispatch] ])
 
     # startup the StopWatch.GenServer (which will populate the Echo Hub)
-    children = [ 
-      worker(KenwoodHF, [key: :kwhf], [name: :kenwood_hf]) 
-    ]
-    opts = [strategy: :one_for_one, name: StopWatch.Supervisor]
+    children = [worker(DeviceProtocol.Common, [Kenwood.TS590, "/dev/tty.SLAB_USBtoUART", [
+      speed: 115200, active: true, flow_control: :hardware, key: :kwhf ]],
+      [name: :kenwood_hf]) ]
+    opts = [strategy: :one_for_one, name: Shack.Supervisor]
     Supervisor.start_link(children, opts)
-	
   end
-
 end
-
