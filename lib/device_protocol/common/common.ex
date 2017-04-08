@@ -105,10 +105,10 @@ defmodule Shack.DeviceProtocol.Common do
       path: [:shack, :kwhf],         # REVIEW
       key: nil,                       # REVIEW
       status: nil,
+      power: nil,                     # cache of power on/off
       uart: nil,
       lt_in: nil,
       lt_out: nil,
-      power: nil,                     # cache of power on/off
       b_in: 0,
       b_out: 0,
       linebuf: <<>>,
@@ -176,9 +176,8 @@ defmodule Shack.DeviceProtocol.Common do
 
     # change public state to reflect nullified rig
 
-    state = change state, disable_fields(state, power: nil, status: :initializing)
     :hub.manage(state.path, [])
-    {:ok, state }
+    {:ok, reset(state, %{power: nil, status: :initializing}) }
   end
 
   def handle_info({:nerves_uart, _port, data}, state) do
@@ -239,8 +238,7 @@ defmodule Shack.DeviceProtocol.Common do
   # "we lost commmunication with the rig for some reason"
   def handle_info(:watchdog, state) do
     Logger.info "got rig watchdog timeout, discarding state"
-    changes = disable_fields(state, status: :offline, power: nil)
-    {:noreply, change(state, changes) }
+    {:noreply, reset(state, %{status: :offline, power: nil})}
   end
 
   # "ask the rig for it's state so we update our cache"
@@ -278,28 +276,33 @@ defmodule Shack.DeviceProtocol.Common do
   # handle notifications about the state of power switch on rig
   # rig will get sync'd automatically by the AI handler below
   def on_frame(<<"PS", ps::binary>>, state) do
+    #Logger.debug "got PS#{ps} with status #{inspect state.status} and power #{inspect state.power}"
     case {state.status, state.power, ps} do
       {:online, true, "1"}  ->  state  # we already know power on
       {:syncing, true, "1"} ->  state  # we already know power on
+      {:wait, true, "1"} ->  state  # we already know power on
       {:online, false, "0"} ->  state  # we already know power off
       {_, _, "1"} -> # power just came on, reflect that
-        change state, status: :wait, power: :true
-      {_, _, "0"} -> # power newly turned off
-        change state, disable_fields(state, status: :online, power: false)
+        reset state, %{status: :wait, power: true}
+      {_, _, "0"} -> # power newly turned off, device says so
+        reset state, %{status: :online, power: false}
     end
   end
 
   # heartbeat queries the rig periodically for both power switch and AI.
   # If we ever hear that the rig is in AI0, sync the rig, forcing AI2
   def on_frame(<<"AI", ai::binary>>, state) do
-    # Logger.debug "got AI #{inspect ai} with state #{inspect state.status}"
+    #Logger.debug "got AI #{inspect ai} with state #{inspect state.status}"
     case {state.status, ai} do
       {:online, "2"} -> state   # already ai2, and sync'd
-      {:syncing, "2"} -> # ai2 after rig_sync
-        change state, status: :online, power: true
+      {:syncing, _} -> # ai0 right after rig_sync init or ai2
+        change(state, %{status: :online})
+        |> Map.put(:status, :online)
       _ ->
+        Logger.info "initalizing rig sync(in status #{state.status})"
         send self(), :rig_sync # should put it in ai2 and announce ai2
-        change state, status: :syncing, power: true
+        change(state, %{status: :syncing})
+        |> Map.put(:status, :syncing)
     end
   end
 
@@ -323,22 +326,22 @@ defmodule Shack.DeviceProtocol.Common do
 
   ############################## who knows what #############################
 
-  def handle_call({:request, _path, changes, _context}, _from, old_state) do
-    new_state = Enum.reduce changes, old_state, fn({k,v}, state) ->
-      handle_set(k,v,state)
-    end
-    {:reply, :ok, new_state}
-  end
+  # def handle_call({:request, _path, changes, _context}, _from, old_state) do
+  #   new_state = Enum.reduce changes, old_state, fn({k,v}, state) ->
+  #     handle_f(k,v,state)
+  #   end
+  #   {:reply, :ok, new_state}
+  # end
 
   # handle turning power on/off
   def handle_set(:power, ps, state) do
     case {ps, state.power} do
       {true, false} ->
         send self(), {:send_frame, "PS1"}
-        change state, status: :wait, power: true
+        reset state, %{status: :wait, power: true}
       {false, true} ->
         send self(), {:send_frame, "PS0"}
-        change state, disable_fields(state, power: false)
+        reset state, %{power: false}
       _ -> state
     end
   end
@@ -354,7 +357,7 @@ defmodule Shack.DeviceProtocol.Common do
     case FrameEncoder.encode(length, format, value) do
       frame when is_binary(frame) ->
         send self(), {:send_frame, cmd <> frame}
-        change state, [{key, value}]
+        change(state, Map.new([{key, value}]))
       error ->
         Logger.error "#{key} encode_frame(#{inspect length}, #{inspect format}, #{inspect value}) returned #{inspect error}"
         state
@@ -364,25 +367,24 @@ defmodule Shack.DeviceProtocol.Common do
 
   ############################ initializer helpers ##########################
 
-  # return a map of field keys where each key is set to nil, then
-  # is set to nil, then merged with settings
-  # this is used to "intialize" the list of fields
-  defp disable_fields(state, settings) do
-    Logger.debug "#{__MODULE__} disabling all fields, then setting #{inspect settings}"
-    state.field_map
-    |> Map.keys
-    |> Enum.map(&({&1, nil}))
-    |> Map.new
-    |> Map.merge(Map.new(settings))
+  # invalidate all fields, apply settings to state & fields, and publish changes
+  defp reset(state, settings) do
+    Logger.debug "#{__MODULE__} invalidating fields, setting state&fields: #{inspect settings}"
+    invalidations = state.field_map
+      |> Map.keys
+      |> Enum.map(&({&1, nil}))
+      |> Map.new
+      |> Map.merge(Map.new(settings))
+    change(state, invalidations)
+    |> Map.merge(settings)
   end
 
-  # make and ANNOUNCE a change to the fields, return new state
-  defp change(state, changes) when is_map(changes) do
-    Logger.debug "making changes to fields: #{inspect changes}"
+  # apply `changes` and `settings` to the field cache in state, returning a new state
+  # and publishing the changes.
+  defp change(state, changes) do
+    # Logger.debug "making changes to fields: #{inspect changes}"
     Hub.update state.path, changes
     %{state | fields: Map.merge(state.fields, changes)}
   end
-  defp change(state, changes) do
-    change(state, Map.new(changes))
-  end
+
 end

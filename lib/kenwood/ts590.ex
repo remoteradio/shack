@@ -1,3 +1,5 @@
+
+
 defmodule Kenwood.TS590 do
 
   @moduledoc """
@@ -10,7 +12,7 @@ defmodule Kenwood.TS590 do
 
   def field_map, do: %{
     ant_tuner:    {"AC",  3, [000,100,110,111]},
-#   af_gain:      {"AG",  3, 0..255, p1: "0"},
+    af_gain:      {"AG",  4, 0..255}, # was 3, 0..255, p1: "0"},
     rf_gain:      {"RG",  3, 0..255},
     beat_cancel:  {"BC",  1, :bool},
     notch_freq:   {"BP",  3, 0..127},
@@ -25,11 +27,11 @@ defmodule Kenwood.TS590 do
     func_rx:      {"FR",  1, 0..2},
     func_tx:      {"FT",  1, 0..2},
     fine_tune:    {"FS",  1, :bool},
-    fw_version:   {"FV",  4, :ro_string},
+    fw_version:   {"FV",  4, :string},
     filter_width: {"FW",  4, 0..9999 },
     agc_mode:     {"GC",  1, 0..2},
     agc_speed:    {"GT",  2, 1..20},
-    model:        {"ID",  3, :ro_bool},
+    model:        {"ID",  3, :string},
 #    if_shift:     {"IS",  4, 0..9999, p1: " ", query: "IS" }}
     cw_speed:     {"KS",  3, 4..60 },
     mode:         {"MD",  1, 0..9 },
@@ -59,9 +61,9 @@ defmodule Kenwood.TS590 do
     vox_delay:    {"VD", 4, 0..3000},
     vox_gain:     {"VG", 3, 0..9},
     vox:          {"VX", 1, :bool},
-    xit:          {"XT", 1, :bool}
+    xit:          {"XT", 1, :bool},
     # antenna_nubmer:  {:simple,   {"AN",  3, 0..255} },
-    # s_meter:      {"SM", 4, 0..30, read_only: true, p1:"0"}
+    s_meter:      {"SM", 5, 0..30} #, read_only: true, p1:"0"}
     # fv - firmware version
   }
 
