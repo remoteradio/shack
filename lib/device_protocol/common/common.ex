@@ -204,17 +204,13 @@ defmodule Shack.DeviceProtocol.Common do
   # send a frame to the rig, recording the last frame sent in case it errors
 
   def handle_info({:send_frame, frame}, state) do
-    #Logger.debug "send: #{frame}
+    #Logger.debug "out(#{inspect frame})"
     :ok = Nerves.UART.write(state.uart, (frame <> ";"))
     {:noreply, %{state | last_sent_frame: frame}}
   end
 
   def handle_info(:heartbeat, state) do
-    query = case state.status do
-      :offline -> "PS;ID"
-      _ -> "PS;AI"
-    end
-    send self(), {:send_frame, query}
+    out state.model_module.generate(:heartbeat, state.fields)
     {:noreply, state}
   end
 
@@ -283,8 +279,10 @@ defmodule Shack.DeviceProtocol.Common do
       {:wait, true, "1"} ->  state  # we already know power on
       {:online, false, "0"} ->  state  # we already know power off
       {_, _, "1"} -> # power just came on, reflect that
+        Logger.info "#{__MODULE__} - equipment powered on"
         reset state, %{status: :wait, power: true}
       {_, _, "0"} -> # power newly turned off, device says so
+        Logger.info "#{__MODULE__} - equipment powered off"
         reset state, %{status: :online, power: false}
     end
   end
@@ -296,10 +294,11 @@ defmodule Shack.DeviceProtocol.Common do
     case {state.status, ai} do
       {:online, "2"} -> state   # already ai2, and sync'd
       {:syncing, _} -> # ai0 right after rig_sync init or ai2
+        Logger.info "#{__MODULE__} - equipment online"
         change(state, %{status: :online})
         |> Map.put(:status, :online)
       _ ->
-        Logger.info "initalizing rig sync(in status #{state.status})"
+        Logger.info "#{__MODULE__} - beginning equipment sync(in status #{state.status})"
         send self(), :rig_sync # should put it in ai2 and announce ai2
         change(state, %{status: :syncing})
         |> Map.put(:status, :syncing)
@@ -337,10 +336,10 @@ defmodule Shack.DeviceProtocol.Common do
   def handle_set(:power, ps, state) do
     case {ps, state.power} do
       {true, false} ->
-        send self(), {:send_frame, "PS1"}
+        out "PS1"
         reset state, %{status: :wait, power: true}
       {false, true} ->
-        send self(), {:send_frame, "PS0"}
+        out "PS0"
         reset state, %{power: false}
       _ -> state
     end
@@ -355,8 +354,8 @@ defmodule Shack.DeviceProtocol.Common do
 
   defp handle_mapped_set({cmd, length, format}, key, value, state) do
     case FrameEncoder.encode(length, format, value) do
-      frame when is_binary(frame) ->
-        send self(), {:send_frame, cmd <> frame}
+      frame_args when is_binary(frame_args) ->
+        out cmd <> frame_args
         change(state, Map.new([{key, value}]))
       error ->
         Logger.error "#{key} encode_frame(#{inspect length}, #{inspect format}, #{inspect value}) returned #{inspect error}"
@@ -365,11 +364,16 @@ defmodule Shack.DeviceProtocol.Common do
   end
 
 
+  # send a frame(binary) or frames(list of binaries) out to the controlled device
+  @spec out(list | binary) :: any
+  defp out(l) when is_list(l), do: Enum.each l, &(out(&1))
+  defp out(f) when is_binary(f), do: send self(), {:send_frame, f}
+
   ############################ initializer helpers ##########################
 
   # invalidate all fields, apply settings to state & fields, and publish changes
   defp reset(state, settings) do
-    Logger.debug "#{__MODULE__} invalidating fields, setting state&fields: #{inspect settings}"
+    #Logger.debug "#{__MODULE__} invalidating fields, setting state&fields: #{inspect settings}"
     invalidations = state.field_map
       |> Map.keys
       |> Enum.map(&({&1, nil}))

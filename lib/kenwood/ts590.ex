@@ -67,4 +67,8 @@ defmodule Kenwood.TS590 do
     # fv - firmware version
   }
 
+  # frames to send on heartbeat function
+  def generate(:heartbeat, %{power: true}=_state), do: ["PS", "AI"]
+  def generate(:heartbeat, _), do: ["PS", "ID"]
+
 end
