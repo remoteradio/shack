@@ -3,7 +3,7 @@ defmodule Icom.CIV do
 	Implements ICOM's CI-V protocol
 	"""
 
-	defmodule Icom.CIV.Framing do
+	defmodule Framing do
 	  @behaviour Circuits.UART.Framing
 	  @moduledoc false
 
