@@ -10,22 +10,37 @@ defmodule Icom.IC7610 do
   end
 
   def init(args) do
-    {:ok, pid} = Circuits.UART.start_link
-    :ok = Circuits.UART.open(pid, args[:port], speed: args[:speed], active: true, framing: Icom.CIV.Framing)
-    {:ok, %{pid: pid}}
+    {:ok, uart_pid} = Circuits.UART.start_link
+    :ok = Circuits.UART.open(uart_pid, args[:port], speed: args[:speed], active: true, framing: Icom.CIV.Framing)
+    {:ok, %{uart_pid: uart_pid, rig: %{}}}
   end
     
-  def handle_info(:circuits_uart, _source, <<_ctlr_addr, _xcvr_addr, frame :: binary>>, state) do
-    handle_xcvr(frame, state)
+  def handle_info({:circuits_uart, _source, <<_ctlr_addr, _xcvr_addr, frame :: binary>>}, state) do
+    updates = case frame do
+      <<00, bcdf::binary>> -> 
+        %{freq: decode_bcd_freq(bcdf)}
+      <<01, mode, fil>> -> 
+        %{mode: mode, filter: fil}
+      _ -> 
+        Logger.info "Received from xcvr unknown: #{inspect frame}"
+    end
+    {:noreply, apply_updates(updates, state)}
   end
 
-  def handle_xcvr(<<00, bcd_freq::size(5)>>, state) do
-    on_rig(:freq, decode_bcd_freq(bcd_freq), state)
+  # apply a map of updates to state, announce only real changes, return modified state
+  defp apply_updates(nil, state), do: state
+  defp apply_updates(updates, state) do
+    Logger.info "Updates: #{inspect updates}"
+    changes = 
+      updates
+      |> Enum.reject(fn {key, val} -> (state.rig[key] == val) end)
+      |> Enum.into(%{})
+    announce(changes, state)
+    %{state | rig: Map.merge(state.rig, changes)}
   end
 
-  def on_rig(atom, args, state) do
-      Logger.info("#{atom}: #{args}")
-      {:noreply, state}
+  defp announce(changes, _state) do
+    Logger.info("changes: #{inspect changes}")
   end
 
   defp decode_bcd_freq(<<f10::4,f1::4,f1k::4,f100::4,f100k::4,f10k::4,f10m::4,f1m::4,f1g::4,f100m::4>>) do
