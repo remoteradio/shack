@@ -4,20 +4,19 @@ defmodule Shack.Mixfile do
 
   def project, do: [
     app: :shack,
-    version: "0.0.1",
-    elixir: "~> 1.0",
+    version: "0.1.1",
+    elixir: "~> 1.8",
     deps: deps()
   ]
 
   def application, do: [
-      mod:          { Shack.Application, [] },
-      applications: [ :echo ],
-      env:          [ ]
+    mod: { Shack.Application, [] },
+    extra_applications: [:logger]
   ]
 
-  defp deps(), do: [
-    {:echo, git: "git@github.com:ghitchens/echo.git"},
-    {:nerves_uart, "~> 0.1"}
+  defp deps, do: [
+      {:circuits_uart, "~> 1.3"},
+      {:tortoise, "~> 0.9"}
   ]
 
 end
