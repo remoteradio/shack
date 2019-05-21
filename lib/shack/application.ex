@@ -12,10 +12,7 @@ defmodule Shack.Application do
         handler: {Shack.Handler, []},
         server: {Tortoise.Transport.Tcp, host: 'localhost', port: 1883},
         subscriptions: [{"shack/#", 0}]},
-      # worker(DeviceProtocol.Common, [
-      #   Kenwood.TS590, "/dev/tty.SLAB_USBtoUART", [
-      #     speed: 115200, active: true, flow_control: :hardware, key: :kwhf ]],
-      #     [name: :kenwood_hf]) 
+      {Icom.IC7610, port: "/dev/ttyUSB0", speed: 115200},
       {Shack.Controller, []}
     ]
 
