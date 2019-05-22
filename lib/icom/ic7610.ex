@@ -14,18 +14,22 @@ defmodule Icom.IC7610 do
     :ok = Circuits.UART.open(uart_pid, args[:port], speed: args[:speed], active: true, framing: Icom.CIV.Framing)
     {:ok, %{uart_pid: uart_pid, rig: %{}}}
   end
-    
-  def handle_info({:circuits_uart, _source, <<_ctlr_addr, _xcvr_addr, frame :: binary>>}, state) do
+
+  # Public API
+
+  # Message Handlers
+
+  def handle_info({:circuits_uart, _port, <<_caddr, _xaddr, frame :: binary>>}, state) do
     updates = case frame do
-      <<00, bcdf::binary>> -> 
-        %{freq: decode_bcd_freq(bcdf)}
-      <<01, mode, fil>> -> 
-        %{mode: mode, filter: fil}
+      <<00, bcdf::binary>> ->     %{freq: decode_bcd_freq(bcdf)}
+      <<01, mode, fil>> ->        %{mode: mode, filter: fil}
       _ -> 
         Logger.info "Received from xcvr unknown: #{inspect frame}"
     end
     {:noreply, apply_updates(updates, state)}
   end
+
+  # Private Helpers
 
   # apply a map of updates to state, announce only real changes, return modified state
   defp apply_updates(nil, state), do: state
@@ -39,6 +43,7 @@ defmodule Icom.IC7610 do
     %{state | rig: Map.merge(state.rig, changes)}
   end
 
+  # called when a state change occurs, if we should announce it
   defp announce(changes, _state) do
     Logger.info("changes: #{inspect changes}")
   end
