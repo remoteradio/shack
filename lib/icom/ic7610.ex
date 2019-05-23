@@ -3,6 +3,7 @@ defmodule Icom.IC7610 do
   require Logger
   use GenServer
   alias Circuits.UART
+  alias ICOM.BCD
 
   # APPLICATION BEHAVIOR
 
@@ -51,7 +52,7 @@ defmodule Icom.IC7610 do
 
   def handle_info({:circuits_uart, _port, <<_caddr, _xaddr, frame :: binary>>}, state) do
     updates = case frame do
-      <<00, bcd::binary>> ->     %{freq: ICOM.BCD.decode(bcd)}
+      <<00, bcd::binary>> ->     %{freq: BCD.decode(bcd)}
       <<01, mode, fil>> ->       %{mode: mode, filter: fil}
       _ -> 
         Logger.info "Received from xcvr unknown: #{inspect frame}"
