@@ -2,6 +2,7 @@ defmodule Icom.IC7610 do
 
   require Logger
   use GenServer
+  alias Circuits.UART
 
   # APPLICATION BEHAVIOR
 
@@ -10,27 +11,87 @@ defmodule Icom.IC7610 do
   end
 
   def init(args) do
-    {:ok, pid} = Circuits.UART.start_link
-    :ok = Circuits.UART.open(pid, args[:port], speed: args[:speed], active: true, framing: Icom.CIV.Framing)
-    {:ok, %{pid: pid}}
-  end
-    
-  def handle_info(:circuits_uart, _source, <<_ctlr_addr, _xcvr_addr, frame :: binary>>, state) do
-    handle_xcvr(frame, state)
+    {:ok, uart} = UART.start_link
+    case UART.open(uart, args[:port], speed: args[:speed], active: true, framing: Icom.CIV.Framing) do
+      :ok -> {:ok, %{uart: uart, rig: %{}}}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
-  def handle_xcvr(<<00, bcd_freq::size(5)>>, state) do
-    on_rig(:freq, decode_bcd_freq(bcd_freq), state)
+  # Public API
+
+  # def set(args) do
+  #   GenServer.cast __MODULE__, {:set, args})
+  # end
+
+  # def handle_info({:mqtt, topic, payload}, state) do
+  #   handle_mqtt(topic, payload, state)
+  # end
+
+  # def handle_mqtt("freq/set", payload, state) do
+  #   send(state)
+  # end
+
+  # def handle_cast({:mqtt, topic, set, updates}, state) do
+  #   changes = 
+  #     updates
+  #     |> Enum.reject(fn {key, val} -> (state.rig[key] == val) end)
+  #     |> Enum.into(%{})
+
+
+  #   Enum.each updates, fn {key, val} ->
+
+  #   Circuits.UART.write(state.uart, 
+  #   {:noreply, state}
+  # end
+
+  def set(attribute, value), do: GenServer.cast __MODULE__, {:set, attribute, value}
+
+  # GENERIC MESSAGE (INFO) HANDLERS
+
+  def handle_info({:circuits_uart, _port, <<_caddr, _xaddr, frame :: binary>>}, state) do
+    updates = case frame do
+      <<00, bcd::binary>> ->     %{freq: ICOM.BCD.decode(bcd)}
+      <<01, mode, fil>> ->       %{mode: mode, filter: fil}
+      _ -> 
+        Logger.info "Received from xcvr unknown: #{inspect frame}"
+    end
+    {:noreply, apply_updates(updates, state)}
   end
 
-  def on_rig(atom, args, state) do
-      Logger.info("#{atom}: #{args}")
-      {:noreply, state}
+  # CAST HANDLERS
+
+  def handle_cast({:set, key, val}, state), do: _set {key,val}, state
+
+  # ATTRIBUTE HANDLERS
+
+  defp _set({:freq, f}, state), do: _cmd <<0x05>> <> BCD.encode(f), state
+  defp _set(unknown, state) do
+    Logger.info "received unknown set message #{inspect unknown}"
   end
 
-  defp decode_bcd_freq(<<f10::4,f1::4,f1k::4,f100::4,f100k::4,f10k::4,f10m::4,f1m::4,f1g::4,f100m::4>>) do
-    ( f1 + f10*10 + f100*100 + f1k*1000 + f10k*10000 + f100k * 100000 +
-      f1m * 1000000 + f10m * 10000000 + f100m * 100000000 + f1g * 1000000000 )
+  defp _cmd(frame, state) do
+    UART.write(frame)
+    {:noreply, state}
+  end
+
+  # PRIVATE HELPERS
+
+  # apply a map of updates to state, announce only real changes, return modified state
+  defp apply_updates(nil, state), do: state
+  defp apply_updates(updates, state) do
+    Logger.info "Updates: #{inspect updates}"
+    changes = 
+      updates
+      |> Enum.reject(fn {key, val} -> (state.rig[key] == val) end)
+      |> Enum.into(%{})
+    announce(changes, state)
+    %{state | rig: Map.merge(state.rig, changes)}
+  end
+
+  # called when a state change occurs, if we should announce it
+  defp announce(changes, _state) do
+    Logger.info("changes: #{inspect changes}")
   end
 
 end

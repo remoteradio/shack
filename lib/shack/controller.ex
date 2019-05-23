@@ -41,7 +41,7 @@ defmodule Shack.Controller do
   # MQTT HANDLERS
 
   def handle_mqtt(["test", "logme"], payload, state) do
-    Logger.info "Got rib/test/logme with payload #{payload}"
+    Logger.info "Got test/logme with payload #{payload}"
     {:noreply, state}
   end
   def handle_mqtt(subtopic, _payload, state) do    # default is just to ignore the message

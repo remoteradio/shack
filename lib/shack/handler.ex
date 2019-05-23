@@ -16,6 +16,10 @@ defmodule Shack.Handler do
     send(Shack.Controller, {:mqtt, subtopics, payload})
     {:ok, state}
   end
+  def handle_message(["ic7610" | subtopics], payload, state) do
+    send(Icom.IC7610, {:mqtt, subtopics, payload})
+    {:ok, state}
+  end
   def handle_message(_topics, _payload, state) do  # ignore unmatched topics
     {:ok, state}
   end
