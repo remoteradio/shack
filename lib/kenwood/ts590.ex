@@ -46,7 +46,6 @@ defmodule Kenwood.TS590 do
 #   proc_in, proc_out -> "PL", complicated
     speech_proc:  {"PR",  1, :bool},
 #    power_switch: {"PS",  1, :bool},     # handled elsewhere
-    rf_gain:      {"RG",  3, 0..255},
     nr_level:     {"RL",  2, 01.10},
     rit:          {"RT",  1, :bool},
     #  ru/rd -- complicated

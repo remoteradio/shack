@@ -23,6 +23,7 @@ defmodule Icom.IC7610 do
         send self(), {:tick, @tick_fast}
         send self(), {:tick, @tick_med}
         send self(), {:tick, @tick_sec}
+        Logger.info "Started #{__MODULE__} driver"
         {:ok, %{uart: uart, rig: @initial_rig_state}}
       {:error, reason} ->
         {:error, reason}
@@ -31,30 +32,12 @@ defmodule Icom.IC7610 do
 
   # Public API
 
-  def handle_mqtt(subtopic, payload, state) do
-    Logger.info "mqtt: #{subtopic} : #{payload}"
-    {:noreply, state}
-  end
-
-  # def handle_cast({:mqtt, topic, set, updates}, state) do
-  #   changes =
-  #     updates
-  #     |> Enum.reject(fn {key, val} -> (state.rig[key] == val) end)
-  #     |> Enum.into(%{})
-
-
-  #   Enum.each updates, fn {key, val} ->
-
-  #   Circuits.UART.write(state.uart,
-  #   {:noreply, state}
-  # end
-
   def set(attribute, value), do: GenServer.cast __MODULE__, {:set, attribute, value}
 
   # GENERIC MESSAGE (INFO) HANDLERS
   def handle_info({:timer, timer_id}, state), do: handle_timer(timer_id, state)
-  def handle_info({:mqtt, subtopic, payload}, state) do
-    handle_mqtt(subtopic, payload, state)
+  def handle_info({:mqtt, topic, payload}, state) do
+    handle_mqtt(topic, payload, state)
   end
   def handle_info({:tick, ms}, state) do
     result = handle_tick(ms, state)
@@ -93,6 +76,16 @@ defmodule Icom.IC7610 do
   end
   def handle_timer(:turning_on, state) do
     {:noreply, update(state, power: :on)}
+  end
+
+  # MQTT handlers
+
+  def handle_mqtt(topic, payload, state) do
+    Logger.info "ic7610 mqtt #{topic} : #{payload}"
+    topic
+    |> String.to_atom
+    |> set(payload)
+    {:noreply, state}
   end
 
   # CAST HANDLERS
@@ -134,46 +127,46 @@ defmodule Icom.IC7610 do
     end
   end
 
-  %{
-    0: {:freq, {:bcdf, 5}}
-    freq:     {:freq, <<0x00>>}
-    afgain:  [0..255,     {<<0x14, 0x01>>, :bcd2}],
-    rfgain:   0..255,     {<<0x14, 0x02>>, :bcd2}},
-    smeter:   0..255,     {<<0x15, 0x02>>, :bcd2}},
-    :preamp,  0..2,       {<<0x16, 0x02>>, :bcd1}},
-    :agctc, 1..3, {<<0x16, 0x03>>, :bcd1},
+  # %{
+  #   0: {:freq, {:bcdf, 5}}
+  #   freq:     {:freq, <<0x00>>}
+  #   afgain:  [0..255,     {<<0x14, 0x01>>, :bcd2}],
+  #   rfgain:   0..255,     {<<0x14, 0x02>>, :bcd2}},
+  #   smeter:   0..255,     {<<0x15, 0x02>>, :bcd2}},
+  #   :preamp,  0..2,       {<<0x16, 0x02>>, :bcd1}},
+  #   :agctc, 1..3, {<<0x16, 0x03>>, :bcd1},
 
 
-    :atten, {range, foo}, {<0x11, :bcd1}
-  }
+  #   :atten, {range, foo}, {<0x11, :bcd1}
+  # }
 
-  defp rig_decode(<<cmd, rest::binary>>, cmdmap) do
-    case @cmdmap[cmd] do
-      cmap -> # we found command in cmdmap
-        case cmap[:sub] do
-          nil -> # no subcmd field for this cmd
-            rig_decode1(cmap, rest)
-          submap ->
-            <<subcmd, rest::binary>> = rest
-            case submap[subcmd] do
-              nil -> # this subcmd not found
-                raise "yikes"
-              map ->
-                rig_decode1(map, rest))
-            end
-        end
-    end
-  end
+  # defp rig_decode(<<cmd, rest::binary>>, cmdmap) do
+  #   case @cmdmap[cmd] do
+  #     cmap -> # we found command in cmdmap
+  #       case cmap[:sub] do
+  #         nil -> # no subcmd field for this cmd
+  #           rig_decode1(cmap, rest)
+  #         submap ->
+  #           <<subcmd, rest::binary>> = rest
+  #           case submap[subcmd] do
+  #             nil -> # this subcmd not found
+  #               raise "yikes"
+  #             map ->
+  #               rig_decode1(map, rest))
+  #           end
+  #       end
+  #   end
+  # end
 
-  defp rig_decode1(<<map, msg>>)
+  # defp rig_decode1(<<map, msg>>)
 
-  end
+  # end
 
-    end
-    case @cmdtbl[cmd] do
-      %{subcmd}
-    end
-  end
+  #   end
+  #   case @cmdtbl[cmd] do
+  #     %{subcmd}
+  #   end
+  # end
 
   # ATTRIBUTE HANDLERS
 

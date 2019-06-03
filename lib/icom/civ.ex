@@ -3,6 +3,7 @@ defmodule Icom do
     Implements ICOM's CI-V protocol
     """
 
+    require Logger
 
 
     defmodule CIV.Framing do
@@ -14,8 +15,7 @@ defmodule Icom do
       end
 
       def add_framing(data, rx_buffer) when is_binary(data) do
-        # No processing - assume the app knows to send the right number of bytes
-        {:ok, <<0xFE, 0xFE, data, 0xFD>>, rx_buffer}
+        {:ok, <<0xFE, 0xFE, data::binary, 0xFD>>, rx_buffer}
       end
 
       def frame_timeout(rx_buffer) do
@@ -45,13 +45,14 @@ defmodule Icom do
       defp process_data(<<0xfe, 0xfe, partial::binary>>, messages) do
         case :binary.split(partial, <<0xfd>>) do
           [^partial] -> # no complete frame yet
-            {:in_frame, messages, <<0xfe, 0xfe, partial>>}
+            {:in_frame, messages, <<0xfe, 0xfe, partial::binary>>}
           [message, rest] -> # add complete frame to messages
             process_data(rest, messages ++ [message])
         end
       end
       # throw away any bytes that are not 0xfe (misframing) and try to reframe
-      defp process_data(<<_misframed, rest::binary>>, messages) do
+      defp process_data(<<misframed, rest::binary>>, messages) do
+        Logger.info "misframed: #{inspect misframed}"
         process_data(rest, messages)
       end
     end
