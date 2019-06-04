@@ -9,7 +9,8 @@ defmodule Icom.IC7610 do
   @tick_med   250
   @tick_sec   1000
 
-  @initial_rig_state  %{power: nil}
+  @initial_rig_state  %{power: nil, mode: nil, filter: nil, freq: nil, atten: nil, afgain: nil,
+                        rfgain: nil, id: nil, smeter: nil, vd: nil}
   # APPLICATION BEHAVIOR
 
   def start_link(args) do
@@ -61,11 +62,15 @@ defmodule Icom.IC7610 do
     if state.rig.power == :on do
       send_civ state.uart, <<0x14, 0x01>>   # poll the af gain
       send_civ state.uart, <<0x14, 0x02>>   # poll the rf gain
+      send_civ state.uart, <<0x15, 0x15>>   # poll vDD
+      send_civ state.uart, <<0x03>>   # poll the frequency
+      send_civ state.uart, <<0x04>>   # poll the mode/filter
       send_civ state.uart, <<0x11>>   # poll the attenuator
     end
     {:noreply, state}
   end
   def handle_tick(@tick_sec, state) do
+    send_civ state.uart, <<0x19, 0x00>>   # poll once a sec for the ID (hearbeat)
     {:noreply, state}
   end
 
@@ -79,12 +84,15 @@ defmodule Icom.IC7610 do
   end
 
   # MQTT handlers
-
-  def handle_mqtt(topic, payload, state) do
-    Logger.info "ic7610 mqtt #{topic} : #{payload}"
+  def handle_mqtt([topic, "set"], payload, state) when is_binary(topic) do
+#    Logger.info "mqtt set #{inspect topic}=#{inspect payload}"
     topic
     |> String.to_atom
     |> set(payload)
+    {:noreply, state}
+  end
+  def handle_mqtt(_topic, _payload, state) do
+    # Logger.info "unknown topic: #{inspect topic} : #{inspect payload}"
     {:noreply, state}
   end
 
@@ -113,11 +121,15 @@ defmodule Icom.IC7610 do
   defp updates_from_frame(frame) do
     case frame do
       <<00, bcd::binary>> -> [freq: BCD.decodef(bcd)]
+      <<03, bcd::binary>> -> [freq: BCD.decodef(bcd)]
       <<05, bcd::binary>> -> [freq: BCD.decodef(bcd)]
       <<01, mode, fil>> -> [mode: mode, filter: fil]
+      <<04, mode, fil>> -> [mode: mode, filter: fil]
       <<0x14, 0x01, bcd::16>> -> [afgain: BCD.decode2(<<bcd::16>>)]
       <<0x14, 0x02, bcd::16>> -> [rfgain: BCD.decode2(<<bcd::16>>)]
       <<0x15, 0x02, bcd::16>> -> [smeter: BCD.decode2(<<bcd::16>>)]
+      <<0x15, 0x15, bcd::16>> -> [vd: BCD.decode2(<<bcd::16>>)]
+      <<0x19, id::binary>> -> [power: :on, id: id]
       <<0x11, atten>> -> [atten: dehex(atten)]
       <<0xFB>> -> {:info, "OK"}
       <<0xFA>> -> {:info, "NG"}
@@ -170,10 +182,28 @@ defmodule Icom.IC7610 do
 
   # ATTRIBUTE HANDLERS
 
-  defp _set({:freq, f}, state) do
+  defp _set({:freq, str}, state) do
+    {f, _} = Integer.parse(str)
     send_civ(state.uart, <<0x05>> <> BCD.encodef(f))
+    {:noreply, update(state, [freq: f])}
   end
-
+  defp _set({:mode, str}, state) do
+    {mode, _} = Integer.parse(str)
+    send_civ(state.uart, <<0x06>> <> BCD.encode1(mode))
+    {:noreply, update(state, [mode: mode])}
+  end
+  defp _set({:filter, str}, state) do
+    {filter, _} = Integer.parse(str)
+    case state[:mode] do
+      mode when is_integer(mode) ->
+        send_civ(state.uart, <<0x06>> <> BCD.encode1(mode) <> BCD.encode1(filter))
+        {:noreply, update(state, [filter: filter])}
+      nil -> false
+    end
+  end
+  defp _set({:power, str}, state) when is_binary(str) do
+    _set({:power, String.to_atom(str)}, state)
+  end
   defp _set({:power, :off}, state) do
     send_civ(state.uart, <<0x18, 0x00>>)
     Process.send_after(self(), {:timer, :turning_off}, 5000)
@@ -187,7 +217,12 @@ defmodule Icom.IC7610 do
   end
   defp _set({:atten, a}, state) do
     send_civ state.uart, <<0x11, Integer.to_string(a, 16)>>
-    {:noreply, state}
+    {:noreply, update(state, [atten: :a])}
+  end
+  defp _set({:rfgain, str}, state) do
+    {rfgain, _} = Integer.parse(str)
+    send_civ state.uart, <<0x14, 0x02>> <> BCD.encode2(rfgain)
+    {:noreply, update(state, [rfgain: rfgain])}
   end
   defp _set(unknown, state) do
     Logger.info "received unknown set message #{inspect unknown}"
@@ -208,14 +243,14 @@ defmodule Icom.IC7610 do
       nil -> nil
       other -> inspect(other)
     end
-    Tortoise.publish Shack, Path.join("ic7610", subtopic), payload, retain: true
+    Tortoise.publish Shack, Path.join("shack/ic7610", subtopic), payload, retain: true
   end
 
   defp update(state, updates), do: apply_updates(updates, state)
 
   # apply a map of updates to state, announce only real changes, return modified state
   defp apply_updates(updates, state) do
-    Logger.info "Updates: #{inspect updates}"
+    # Logger.debug "Updates: #{inspect updates}"
     updates
     |> Enum.reject(fn {key, val} -> (state.rig[key] == val) end)
     |> apply_changes(state)

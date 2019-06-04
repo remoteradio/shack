@@ -13,6 +13,7 @@ defmodule Shack.Controller do
     publish "controller/time_last_started", timestamp(), retain: true
     send self(), {:tick, 1000}
     send self(), {:tick, 5000}
+    Logger.info "Started Shack Controller"
     {:ok, %{}}
   end
 
