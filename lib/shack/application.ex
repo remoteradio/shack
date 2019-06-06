@@ -10,7 +10,7 @@ defmodule Shack.Application do
       {Tortoise.Connection,
         client_id: Shack,
         handler: {Shack.Handler, []},
-        server: {Tortoise.Transport.Tcp, host: 'localhost', port: 1883},
+        server: {Tortoise.Transport.Tcp, host: 'radon.telo.io', port: 1883},
         subscriptions: [{"shack/#", 0}]},
       {Icom.IC7610, port: "/dev/ttyUSB0", speed: 115200},
       {Shack.Controller, []}
