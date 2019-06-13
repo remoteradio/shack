@@ -98,7 +98,10 @@ defmodule Icom.IC7610 do
 
   # CAST HANDLERS
 
-  def handle_cast({:set, key, val}, state), do: _set {key,val}, state
+  def handle_cast({:set, key, val}, state) do
+ #   Logger.debug inspect({:set, key, val, :state, state})
+    _set {key,val}, state
+  end
 
   # RIG FRAME HANDLERS
 
@@ -199,13 +202,13 @@ defmodule Icom.IC7610 do
   end
   defp _set({:filter, str}, state) do
     {filter, _} = Integer.parse(str)
-    case state[:mode] do
+    case state.rig[:mode] do
       mode when is_integer(mode) ->
         send_civ(state.uart, <<0x06>> <> BCD.encode1(mode) <> BCD.encode1(filter))
         {:noreply, update(state, [filter: filter])}
       other -> 
-	Logger.error "Mode (#{inspect other}) wasn't an integer, filter not set!"
-	{:noreply, state}
+        Logger.error "Mode (#{inspect other}) wasn't an integer, filter not set!"
+        {:noreply, state}
     end
   end
   defp _set({:power, str}, state) when is_binary(str) do
@@ -257,7 +260,7 @@ defmodule Icom.IC7610 do
 
   # apply a map of updates to state, announce only real changes, return modified state
   defp apply_updates(updates, state) do
-    # Logger.debug "Updates: #{inspect updates}"
+#    Logger.debug "Updates: #{inspect updates}"
     updates
     |> Enum.reject(fn {key, val} -> (state.rig[key] == val) end)
     |> apply_changes(state)
@@ -265,6 +268,7 @@ defmodule Icom.IC7610 do
 
   defp apply_changes([], state), do: state
   defp apply_changes(changes, state) do
+#    Logger.debug "Changes: #{inspect changes}"
     announce_changes(changes, state)
     %{state | rig: Map.merge(state.rig, :maps.from_list(changes))}
   end
