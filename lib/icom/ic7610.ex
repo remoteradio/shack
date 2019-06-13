@@ -131,8 +131,8 @@ defmodule Icom.IC7610 do
       <<0x15, 0x15, bcd::16>> -> [vd: BCD.decode2(<<bcd::16>>)]
       <<0x19, id::binary>> -> [power: :on, id: id]
       <<0x11, atten>> -> [atten: dehex(atten)]
-      <<0xFB>> -> {:info, "OK"}
-      <<0xFA>> -> {:info, "NG"}
+      <<0xFB>> -> nil # was {:info, "OK"}
+      <<0xFA>> -> nil # was {:info, "NG"} -- ideally output last state
       # <<0x14, _>> -> nil      # ignore for now
       # <<0x15, _>> -> nil      # ignore for now
       _ -> {:info, "unknown: #{inspect frame}"}
