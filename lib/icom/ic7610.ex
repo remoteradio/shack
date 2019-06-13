@@ -183,9 +183,14 @@ defmodule Icom.IC7610 do
   # ATTRIBUTE HANDLERS
 
   defp _set({:freq, str}, state) do
-    {f, _} = Integer.parse(str)
-    send_civ(state.uart, <<0x05>> <> BCD.encodef(f))
-    {:noreply, update(state, [freq: f])}
+    case Integer.parse(str) do
+      {f, _} -> 
+        send_civ(state.uart, <<0x05>> <> BCD.encodef(f))
+        {:noreply, update(state, [freq: f])}
+      _ -> 
+        Logger.warn "Bad frequency requested: #{str}"
+        {:noreply, state}
+    end
   end
   defp _set({:mode, str}, state) do
     {mode, _} = Integer.parse(str)
@@ -198,7 +203,9 @@ defmodule Icom.IC7610 do
       mode when is_integer(mode) ->
         send_civ(state.uart, <<0x06>> <> BCD.encode1(mode) <> BCD.encode1(filter))
         {:noreply, update(state, [filter: filter])}
-      nil -> false
+      other -> 
+	Logger.error "Mode (#{inspect other}) wasn't an integer, filter not set!"
+	{:noreply, state}
     end
   end
   defp _set({:power, str}, state) when is_binary(str) do
